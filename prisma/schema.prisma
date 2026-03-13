@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ApplicantStatus {
+  STUDENT
+  APPRENTICE
+  INTERN
+  EMPLOYEE
+  FREELANCER
+  OTHER
+}
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  WAITING_GUARANTOR
+  WAITING_DOCUMENTS
+  APPROVED
+  REJECTED
+  CANCELED
+}
+
+enum GuarantorStatus {
+  PENDING
+  CONTACTED
+  CONFIRMED
+  DECLINED
+}
+
+enum ProductType {
+  LAPTOP
+  SMARTPHONE
+  TABLET
+  ROUTER
+}
+
+enum PaymentPlanStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  LATE
+  DEFAULTED
+  CANCELED
+}
+
+enum InstallmentStatus {
+  PENDING
+  PAID
+  LATE
+  DEFAULTED
+}
+
+model Application {
+  id                     String             @id @default(cuid())
+  firstName              String
+  lastName               String
+  dateOfBirth            DateTime
+  gender                 String?
+  phone                  String
+  email                  String?
+  addressLine            String
+  city                   String
+  country                String             @default("Senegal")
+
+  applicantStatus        ApplicantStatus
+  schoolName             String?
+  programName            String?
+  studyLevel             String?
+  employerName           String?
+
+  estimatedMonthlyIncome Int?
+  incomeSource           String?
+  hasFamilySupport       Boolean            @default(false)
+  familySupportAmount    Int?
+
+  availableDownPayment   Int
+  requestedAmount        Int
+  approvedAmount         Int?
+
+  status                 ApplicationStatus  @default(SUBMITTED)
+  riskScore              Int?
+  adminNotes             String?
+
+  identityDocumentUrl    String?
+  statusProofUrl         String?
+  incomeProofUrl         String?
+
+  productId              String
+  guarantorId            String?            @unique
+
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  product                Product            @relation(fields: [productId], references: [id])
+  guarantor              Guarantor?         @relation(fields: [guarantorId], references: [id])
+  paymentPlan            PaymentPlan?
+
+  @@index([status])
+  @@index([phone])
+  @@index([createdAt])
+}
+
+model Guarantor {
+  id                      String           @id @default(cuid())
+  fullName                String
+  relationshipToApplicant String
+  phone                   String
+  email                   String?
+  profession              String?
+  addressLine             String?
+  city                    String?
+  supportType             String?
+  status                  GuarantorStatus  @default(PENDING)
+
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  application             Application?
+}
+
+model Product {
+  id           String      @id @default(cuid())
+  name         String
+  type         ProductType
+  brand        String?
+  model        String?
+  priceCents   Int
+  currency     String      @default("XOF")
+  isActive     Boolean     @default(true)
+
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  applications Application[]
+
+  @@index([type, isActive])
+}
+
+model PaymentPlan {
+  id                   String            @id @default(cuid())
+  applicationId        String            @unique
+  totalAmount          Int
+  downPaymentAmount    Int
+  financedAmount       Int
+  numberOfInstallments Int
+  status               PaymentPlanStatus @default(PENDING)
+  startDate            DateTime?
+  endDate              DateTime?
+
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  application          Application       @relation(fields: [applicationId], references: [id])
+  installments         Installment[]
+
+  @@index([status])
+}
+
+model Installment {
+  id                String            @id @default(cuid())
+  paymentPlanId     String
+  installmentNumber Int
+  dueDate           DateTime
+  amount            Int
+  paidAt            DateTime?
+  status            InstallmentStatus @default(PENDING)
+
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  paymentPlan       PaymentPlan       @relation(fields: [paymentPlanId], references: [id])
+
+  @@unique([paymentPlanId, installmentNumber])
+  @@index([dueDate, status])
+}
