@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import AdminActions from "./AdminActions";
 
 function formatCurrency(value: number | null | undefined) {
   if (value === null || value === undefined) return "-";
@@ -133,10 +134,22 @@ export default async function AdminApplicationDetailPage({
         </div>
 
         <div className="mb-8 grid gap-4 md:grid-cols-4">
-          <StatCard label="Product price" value={formatCurrency(application.product.priceCents)} />
-          <StatCard label="Down payment" value={formatCurrency(application.availableDownPayment)} />
-          <StatCard label="Requested amount" value={formatCurrency(application.requestedAmount)} />
-          <StatCard label="Created at" value={formatDate(application.createdAt)} />
+          <StatCard
+            label="Product price"
+            value={formatCurrency(application.product.priceCents)}
+          />
+          <StatCard
+            label="Down payment"
+            value={formatCurrency(application.availableDownPayment)}
+          />
+          <StatCard
+            label="Requested amount"
+            value={formatCurrency(application.requestedAmount)}
+          />
+          <StatCard
+            label="Created at"
+            value={formatDate(application.createdAt)}
+          />
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
@@ -170,10 +183,16 @@ export default async function AdminApplicationDetailPage({
                   ["Program name", application.programName || "-"],
                   ["Study level", application.studyLevel || "-"],
                   ["Employer name", application.employerName || "-"],
-                  ["Estimated monthly income", formatCurrency(application.estimatedMonthlyIncome)],
+                  [
+                    "Estimated monthly income",
+                    formatCurrency(application.estimatedMonthlyIncome),
+                  ],
                   ["Income source", application.incomeSource || "-"],
                   ["Family support", application.hasFamilySupport ? "Yes" : "No"],
-                  ["Family support amount", formatCurrency(application.familySupportAmount)],
+                  [
+                    "Family support amount",
+                    formatCurrency(application.familySupportAmount),
+                  ],
                 ]}
               />
             </SectionCard>
@@ -204,7 +223,10 @@ export default async function AdminApplicationDetailPage({
                 <InfoGrid
                   items={[
                     ["Full name", application.guarantor.fullName],
-                    ["Relationship", application.guarantor.relationshipToApplicant],
+                    [
+                      "Relationship",
+                      application.guarantor.relationshipToApplicant,
+                    ],
                     ["Phone", application.guarantor.phone],
                     ["Email", application.guarantor.email || "-"],
                     ["Profession", application.guarantor.profession || "-"],
@@ -229,9 +251,18 @@ export default async function AdminApplicationDetailPage({
             >
               <div className="space-y-4">
                 <SummaryRow label="Application ID" value={application.id} />
-                <SummaryRow label="Status" value={humanizeStatus(application.status)} />
-                <SummaryRow label="Created at" value={formatDate(application.createdAt)} />
-                <SummaryRow label="Updated at" value={formatDate(application.updatedAt)} />
+                <SummaryRow
+                  label="Status"
+                  value={humanizeStatus(application.status)}
+                />
+                <SummaryRow
+                  label="Created at"
+                  value={formatDate(application.createdAt)}
+                />
+                <SummaryRow
+                  label="Updated at"
+                  value={formatDate(application.updatedAt)}
+                />
                 <SummaryRow
                   label="Has guarantor"
                   value={application.guarantor ? "Yes" : "No"}
@@ -243,14 +274,11 @@ export default async function AdminApplicationDetailPage({
               </div>
             </SectionCard>
 
-            <SectionCard
-              title="Admin notes"
-              description="Internal notes and future decision area."
-            >
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                {application.adminNotes || "No admin notes yet."}
-              </div>
-            </SectionCard>
+            <AdminActions
+              applicationId={application.id}
+              currentStatus={humanizeStatus(application.status)}
+              initialNotes={application.adminNotes}
+            />
 
             <SectionCard
               title="Payment plan"
@@ -268,7 +296,9 @@ export default async function AdminApplicationDetailPage({
                   />
                   <SummaryRow
                     label="Down payment"
-                    value={formatCurrency(application.paymentPlan.downPaymentAmount)}
+                    value={formatCurrency(
+                      application.paymentPlan.downPaymentAmount
+                    )}
                   />
                   <SummaryRow
                     label="Financed amount"
@@ -293,9 +323,15 @@ export default async function AdminApplicationDetailPage({
                         <tbody className="divide-y divide-slate-100">
                           {application.paymentPlan.installments.map((item) => (
                             <tr key={item.id}>
-                              <td className="px-4 py-3">{item.installmentNumber}</td>
-                              <td className="px-4 py-3">{formatDate(item.dueDate)}</td>
-                              <td className="px-4 py-3">{formatCurrency(item.amount)}</td>
+                              <td className="px-4 py-3">
+                                {item.installmentNumber}
+                              </td>
+                              <td className="px-4 py-3">
+                                {formatDate(item.dueDate)}
+                              </td>
+                              <td className="px-4 py-3">
+                                {formatCurrency(item.amount)}
+                              </td>
                               <td className="px-4 py-3">{item.status}</td>
                             </tr>
                           ))}
