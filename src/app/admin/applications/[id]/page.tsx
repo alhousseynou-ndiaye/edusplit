@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import AdminActions from "./AdminActions";
+import CreatePaymentPlan from "./CreatePaymentPlan";
 
 function formatCurrency(value: number | null | undefined) {
   if (value === null || value === undefined) return "-";
@@ -90,7 +91,11 @@ export default async function AdminApplicationDetailPage({
       guarantor: true,
       paymentPlan: {
         include: {
-          installments: true,
+          installments: {
+            orderBy: {
+              installmentNumber: "asc",
+            },
+          },
         },
       },
     },
@@ -280,6 +285,13 @@ export default async function AdminApplicationDetailPage({
               initialNotes={application.adminNotes}
             />
 
+            <CreatePaymentPlan
+              applicationId={application.id}
+              status={application.status}
+              hasPaymentPlan={Boolean(application.paymentPlan)}
+              financedAmount={application.requestedAmount}
+            />
+
             <SectionCard
               title="Payment plan"
               description="Payment plan data will appear here once the file is approved and structured."
@@ -307,6 +319,14 @@ export default async function AdminApplicationDetailPage({
                   <SummaryRow
                     label="Installments"
                     value={String(application.paymentPlan.numberOfInstallments)}
+                  />
+                  <SummaryRow
+                    label="Start date"
+                    value={formatDate(application.paymentPlan.startDate)}
+                  />
+                  <SummaryRow
+                    label="End date"
+                    value={formatDate(application.paymentPlan.endDate)}
                   />
 
                   {application.paymentPlan.installments.length > 0 && (
