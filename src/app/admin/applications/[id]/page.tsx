@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import AdminActions from "./AdminActions";
 import CreatePaymentPlan from "./CreatePaymentPlan";
+import InstallmentActions from "./InstallmentActions";
 
 function formatCurrency(value: number | null | undefined) {
   if (value === null || value === undefined) return "-";
@@ -51,6 +52,12 @@ function humanizeStatus(status: string) {
     APPROVED: "Approved",
     REJECTED: "Rejected",
     CANCELED: "Canceled",
+    PENDING: "Pending",
+    ACTIVE: "Active",
+    COMPLETED: "Completed",
+    LATE: "Late",
+    DEFAULTED: "Defaulted",
+    PAID: "Paid",
   };
 
   return map[status] || status;
@@ -71,6 +78,16 @@ function getStatusClasses(status: string) {
     case "WAITING_DOCUMENTS":
       return "bg-orange-50 text-orange-700 border-orange-200";
     case "CANCELED":
+      return "bg-slate-50 text-slate-700 border-slate-200";
+    case "ACTIVE":
+      return "bg-blue-50 text-blue-700 border-blue-200";
+    case "COMPLETED":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "LATE":
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    case "PAID":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "PENDING":
       return "bg-slate-50 text-slate-700 border-slate-200";
     default:
       return "bg-slate-50 text-slate-700 border-slate-200";
@@ -104,6 +121,19 @@ export default async function AdminApplicationDetailPage({
   if (!application) {
     notFound();
   }
+
+  const paidInstallmentsCount =
+    application.paymentPlan?.installments.filter((item) => item.status === "PAID")
+      .length ?? 0;
+
+  const lateInstallmentsCount =
+    application.paymentPlan?.installments.filter((item) => item.status === "LATE")
+      .length ?? 0;
+
+  const remainingBalance =
+    application.paymentPlan?.installments
+      .filter((item) => item.status !== "PAID")
+      .reduce((sum, item) => sum + item.amount, 0) ?? 0;
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -293,6 +323,36 @@ export default async function AdminApplicationDetailPage({
             />
 
             <SectionCard
+              title="Repayment health"
+              description="Operational view of reimbursement progress."
+            >
+              {application.paymentPlan ? (
+                <div className="space-y-4">
+                  <SummaryRow
+                    label="Payment plan status"
+                    value={humanizeStatus(application.paymentPlan.status)}
+                  />
+                  <SummaryRow
+                    label="Paid installments"
+                    value={String(paidInstallmentsCount)}
+                  />
+                  <SummaryRow
+                    label="Late installments"
+                    value={String(lateInstallmentsCount)}
+                  />
+                  <SummaryRow
+                    label="Remaining balance"
+                    value={formatCurrency(remainingBalance)}
+                  />
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                  No repayment data yet because the payment plan has not been created.
+                </div>
+              )}
+            </SectionCard>
+
+            <SectionCard
               title="Payment plan"
               description="Payment plan data will appear here once the file is approved and structured."
             >
@@ -300,7 +360,7 @@ export default async function AdminApplicationDetailPage({
                 <div className="space-y-4">
                   <SummaryRow
                     label="Plan status"
-                    value={application.paymentPlan.status}
+                    value={humanizeStatus(application.paymentPlan.status)}
                   />
                   <SummaryRow
                     label="Total amount"
@@ -338,6 +398,8 @@ export default async function AdminApplicationDetailPage({
                             <th className="px-4 py-3 font-medium">Due date</th>
                             <th className="px-4 py-3 font-medium">Amount</th>
                             <th className="px-4 py-3 font-medium">Status</th>
+                            <th className="px-4 py-3 font-medium">Paid at</th>
+                            <th className="px-4 py-3 font-medium">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -352,7 +414,24 @@ export default async function AdminApplicationDetailPage({
                               <td className="px-4 py-3">
                                 {formatCurrency(item.amount)}
                               </td>
-                              <td className="px-4 py-3">{item.status}</td>
+                              <td className="px-4 py-3">
+                                <span
+                                  className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusClasses(
+                                    item.status
+                                  )}`}
+                                >
+                                  {humanizeStatus(item.status)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                {formatDate(item.paidAt)}
+                              </td>
+                              <td className="px-4 py-3">
+                                <InstallmentActions
+                                  installmentId={item.id}
+                                  currentStatus={item.status}
+                                />
+                              </td>
                             </tr>
                           ))}
                         </tbody>
