@@ -1,5 +1,14 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import {
+  getLateCount,
+  getNextDueInstallment,
+  getPaidRatio,
+  getRemainingBalance,
+  getRepaymentHealthClasses,
+  getRepaymentHealthStatus,
+  humanizeRepaymentHealthStatus,
+} from "@/lib/repayment";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("fr-FR").format(value) + " XOF";
@@ -9,6 +18,13 @@ function formatDate(value: Date) {
   return new Intl.DateTimeFormat("fr-FR", {
     dateStyle: "medium",
     timeStyle: "short",
+  }).format(value);
+}
+
+function formatShortDate(value: Date | null) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "medium",
   }).format(value);
 }
 
@@ -56,6 +72,11 @@ export default async function AdminApplicationsPage() {
     include: {
       product: true,
       guarantor: true,
+      paymentPlan: {
+        include: {
+          installments: true,
+        },
+      },
     },
   });
 
@@ -70,6 +91,12 @@ export default async function AdminApplicationsPage() {
     (app) => app.status === "APPROVED"
   ).length;
 
+  const atRiskCount = applications.filter((app) => {
+    const installments = app.paymentPlan?.installments ?? [];
+    if (installments.length === 0) return false;
+    return getRepaymentHealthStatus(installments) === "AT_RISK";
+  }).length;
+
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-7xl px-6 py-10">
@@ -83,16 +110,17 @@ export default async function AdminApplicationsPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
-            Review incoming applications, monitor statuses, and access each file
-            in detail.
+            Review incoming applications, monitor statuses, and track repayment
+            risk across the portfolio.
           </p>
         </div>
 
-        <div className="mb-8 grid gap-4 md:grid-cols-4">
+        <div className="mb-8 grid gap-4 md:grid-cols-5">
           <StatCard label="Total applications" value={String(totalApplications)} />
           <StatCard label="Submitted" value={String(submittedCount)} />
           <StatCard label="Waiting guarantor" value={String(waitingGuarantorCount)} />
           <StatCard label="Approved" value={String(approvedCount)} />
+          <StatCard label="At risk" value={String(atRiskCount)} />
         </div>
 
         <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -116,7 +144,7 @@ export default async function AdminApplicationsPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full text-left">
+              <table className="min-w-[1400px] text-left">
                 <thead className="bg-slate-50 text-sm text-slate-600">
                   <tr>
                     <th className="px-6 py-4 font-medium">Applicant</th>
@@ -126,82 +154,136 @@ export default async function AdminApplicationsPage() {
                     <th className="px-6 py-4 font-medium">Down payment</th>
                     <th className="px-6 py-4 font-medium">Requested</th>
                     <th className="px-6 py-4 font-medium">Guarantor</th>
-                    <th className="px-6 py-4 font-medium">Status</th>
+                    <th className="px-6 py-4 font-medium">Application status</th>
+                    <th className="px-6 py-4 font-medium">Repayment health</th>
+                    <th className="px-6 py-4 font-medium">Paid ratio</th>
+                    <th className="px-6 py-4 font-medium">Remaining</th>
+                    <th className="px-6 py-4 font-medium">Late count</th>
+                    <th className="px-6 py-4 font-medium">Next due</th>
                     <th className="px-6 py-4 font-medium">Created</th>
                     <th className="px-6 py-4 font-medium">Action</th>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-slate-100 text-sm">
-                  {applications.map((application) => (
-                    <tr key={application.id} className="hover:bg-slate-50/80">
-                      <td className="px-6 py-4 align-top">
-                        <div className="font-medium text-slate-900">
-                          {application.firstName} {application.lastName}
-                        </div>
-                        <div className="mt-1 text-slate-500">
-                          {application.phone}
-                        </div>
-                        {application.email && (
-                          <div className="text-slate-500">{application.email}</div>
-                        )}
-                      </td>
+                  {applications.map((application) => {
+                    const installments = application.paymentPlan?.installments ?? [];
+                    const hasPlan = installments.length > 0;
 
-                      <td className="px-6 py-4 align-top text-slate-700">
-                        {humanizeApplicantStatus(application.applicantStatus)}
-                      </td>
+                    const health = hasPlan
+                      ? getRepaymentHealthStatus(installments)
+                      : null;
 
-                      <td className="px-6 py-4 align-top">
-                        <div className="font-medium text-slate-900">
-                          {application.product.name}
-                        </div>
-                        <div className="mt-1 text-slate-500">
-                          {humanizeProductType(application.product.type)}
-                        </div>
-                      </td>
+                    const remaining = hasPlan
+                      ? getRemainingBalance(installments)
+                      : null;
 
-                      <td className="px-6 py-4 align-top text-slate-700">
-                        {formatCurrency(application.product.priceCents)}
-                      </td>
+                    const paidRatio = hasPlan ? getPaidRatio(installments) : null;
+                    const lateCount = hasPlan ? getLateCount(installments) : null;
+                    const nextDue = hasPlan
+                      ? getNextDueInstallment(installments)
+                      : null;
 
-                      <td className="px-6 py-4 align-top text-slate-700">
-                        {formatCurrency(application.availableDownPayment)}
-                      </td>
+                    return (
+                      <tr key={application.id} className="hover:bg-slate-50/80">
+                        <td className="px-6 py-4 align-top">
+                          <div className="font-medium text-slate-900">
+                            {application.firstName} {application.lastName}
+                          </div>
+                          <div className="mt-1 text-slate-500">
+                            {application.phone}
+                          </div>
+                          {application.email && (
+                            <div className="text-slate-500">{application.email}</div>
+                          )}
+                        </td>
 
-                      <td className="px-6 py-4 align-top text-slate-700">
-                        {formatCurrency(application.requestedAmount)}
-                      </td>
+                        <td className="px-6 py-4 align-top text-slate-700">
+                          {application.applicantStatus}
+                        </td>
 
-                      <td className="px-6 py-4 align-top text-slate-700">
-                        {application.guarantor
-                          ? application.guarantor.fullName
-                          : "No guarantor"}
-                      </td>
+                        <td className="px-6 py-4 align-top">
+                          <div className="font-medium text-slate-900">
+                            {application.product.name}
+                          </div>
+                          <div className="mt-1 text-slate-500">
+                            {application.product.type}
+                          </div>
+                        </td>
 
-                      <td className="px-6 py-4 align-top">
-                        <span
-                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusClasses(
-                            application.status
-                          )}`}
-                        >
-                          {humanizeStatus(application.status)}
-                        </span>
-                      </td>
+                        <td className="px-6 py-4 align-top text-slate-700">
+                          {formatCurrency(application.product.priceCents)}
+                        </td>
 
-                      <td className="px-6 py-4 align-top text-slate-500">
-                        {formatDate(application.createdAt)}
-                      </td>
+                        <td className="px-6 py-4 align-top text-slate-700">
+                          {formatCurrency(application.availableDownPayment)}
+                        </td>
 
-                      <td className="px-6 py-4 align-top">
-                        <Link
-                          href={`/admin/applications/${application.id}`}
-                          className="inline-flex rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-                        >
-                          View file
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
+                        <td className="px-6 py-4 align-top text-slate-700">
+                          {formatCurrency(application.requestedAmount)}
+                        </td>
+
+                        <td className="px-6 py-4 align-top text-slate-700">
+                          {application.guarantor
+                            ? application.guarantor.fullName
+                            : "No guarantor"}
+                        </td>
+
+                        <td className="px-6 py-4 align-top">
+                          <span
+                            className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusClasses(
+                              application.status
+                            )}`}
+                          >
+                            {humanizeStatus(application.status)}
+                          </span>
+                        </td>
+
+                        <td className="px-6 py-4 align-top">
+                          {health ? (
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getRepaymentHealthClasses(
+                                health
+                              )}`}
+                            >
+                              {humanizeRepaymentHealthStatus(health)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">No plan</span>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-4 align-top text-slate-700">
+                          {paidRatio !== null ? `${paidRatio}%` : "-"}
+                        </td>
+
+                        <td className="px-6 py-4 align-top text-slate-700">
+                          {remaining !== null ? formatCurrency(remaining) : "-"}
+                        </td>
+
+                        <td className="px-6 py-4 align-top text-slate-700">
+                          {lateCount !== null ? String(lateCount) : "-"}
+                        </td>
+
+                        <td className="px-6 py-4 align-top text-slate-700">
+                          {nextDue ? formatShortDate(nextDue.dueDate) : "-"}
+                        </td>
+
+                        <td className="px-6 py-4 align-top text-slate-500">
+                          {formatDate(application.createdAt)}
+                        </td>
+
+                        <td className="px-6 py-4 align-top">
+                          <Link
+                            href={`/admin/applications/${application.id}`}
+                            className="inline-flex rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                          >
+                            View file
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -221,28 +303,4 @@ function StatCard({ label, value }: { label: string; value: string }) {
       </p>
     </div>
   );
-}
-
-function humanizeApplicantStatus(status: string) {
-  const map: Record<string, string> = {
-    STUDENT: "Student",
-    APPRENTICE: "Apprentice",
-    INTERN: "Intern",
-    EMPLOYEE: "Employee",
-    FREELANCER: "Freelancer",
-    OTHER: "Other",
-  };
-
-  return map[status] || status;
-}
-
-function humanizeProductType(type: string) {
-  const map: Record<string, string> = {
-    LAPTOP: "Laptop",
-    SMARTPHONE: "Smartphone",
-    TABLET: "Tablet",
-    ROUTER: "Router",
-  };
-
-  return map[type] || type;
 }

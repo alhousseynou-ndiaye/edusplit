@@ -4,6 +4,15 @@ import { prisma } from "@/lib/prisma";
 import AdminActions from "./AdminActions";
 import CreatePaymentPlan from "./CreatePaymentPlan";
 import InstallmentActions from "./InstallmentActions";
+import {
+  getLateCount,
+  getNextDueInstallment,
+  getPaidRatio,
+  getRemainingBalance,
+  getRepaymentHealthClasses,
+  getRepaymentHealthStatus,
+  humanizeRepaymentHealthStatus,
+} from "@/lib/repayment";
 
 function formatCurrency(value: number | null | undefined) {
   if (value === null || value === undefined) return "-";
@@ -122,18 +131,15 @@ export default async function AdminApplicationDetailPage({
     notFound();
   }
 
+  const installments = application.paymentPlan?.installments ?? [];
   const paidInstallmentsCount =
-    application.paymentPlan?.installments.filter((item) => item.status === "PAID")
-      .length ?? 0;
-
-  const lateInstallmentsCount =
-    application.paymentPlan?.installments.filter((item) => item.status === "LATE")
-      .length ?? 0;
-
-  const remainingBalance =
-    application.paymentPlan?.installments
-      .filter((item) => item.status !== "PAID")
-      .reduce((sum, item) => sum + item.amount, 0) ?? 0;
+    installments.filter((item) => item.status === "PAID").length;
+  const lateInstallmentsCount = getLateCount(installments);
+  const remainingBalance = getRemainingBalance(installments);
+  const paidRatio = getPaidRatio(installments);
+  const nextDue = getNextDueInstallment(installments);
+  const repaymentHealth =
+    installments.length > 0 ? getRepaymentHealthStatus(installments) : null;
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -333,6 +339,14 @@ export default async function AdminApplicationDetailPage({
                     value={humanizeStatus(application.paymentPlan.status)}
                   />
                   <SummaryRow
+                    label="Health status"
+                    value={
+                      repaymentHealth
+                        ? humanizeRepaymentHealthStatus(repaymentHealth)
+                        : "-"
+                    }
+                  />
+                  <SummaryRow
                     label="Paid installments"
                     value={String(paidInstallmentsCount)}
                   />
@@ -341,9 +355,29 @@ export default async function AdminApplicationDetailPage({
                     value={String(lateInstallmentsCount)}
                   />
                   <SummaryRow
+                    label="Paid ratio"
+                    value={`${paidRatio}%`}
+                  />
+                  <SummaryRow
                     label="Remaining balance"
                     value={formatCurrency(remainingBalance)}
                   />
+                  <SummaryRow
+                    label="Next due"
+                    value={nextDue ? formatDate(nextDue.dueDate) : "-"}
+                  />
+
+                  {repaymentHealth && (
+                    <div className="pt-2">
+                      <span
+                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getRepaymentHealthClasses(
+                          repaymentHealth
+                        )}`}
+                      >
+                        {humanizeRepaymentHealthStatus(repaymentHealth)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
@@ -354,7 +388,7 @@ export default async function AdminApplicationDetailPage({
 
             <SectionCard
               title="Payment plan"
-              description="Payment plan data will appear here once the file is approved and structured."
+              description="Manage installments and repayment execution."
             >
               {application.paymentPlan ? (
                 <div className="space-y-4">
