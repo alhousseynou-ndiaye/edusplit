@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum ApplicantStatus {
@@ -56,6 +57,83 @@ enum InstallmentStatus {
   DEFAULTED
 }
 
+enum CollectionStage {
+  NONE
+  SOFT_COLLECTION
+  ESCALATED
+  RESOLVED
+}
+
+enum ContactStatus {
+  NOT_CONTACTED
+  CONTACT_ATTEMPTED
+  REACHED
+  NO_RESPONSE
+  PROMISE_TO_PAY
+  DISPUTE
+  REFUSED
+  RESOLVED
+}
+
+enum NextActionType {
+  CALL
+  WHATSAPP
+  SMS
+  EMAIL
+  FOLLOW_UP
+  ESCALATE
+  NONE
+}
+
+enum CollectionPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum CollectionResolutionStatus {
+  OPEN
+  MONITORING
+  CURED
+  CLOSED
+}
+
+enum CollectionEventType {
+  CASE_CREATED
+  CONTACT_ATTEMPTED
+  CONTACT_MADE
+  PROMISE_TO_PAY
+  PROMISE_BROKEN
+  FOLLOW_UP_SCHEDULED
+  STATUS_CHANGED
+  ESCALATED
+  NOTE_ADDED
+  PAYMENT_CONFIRMED
+}
+
+enum CollectionChannel {
+  PHONE
+  WHATSAPP
+  SMS
+  EMAIL
+  IN_PERSON
+  SYSTEM
+}
+
+enum CollectionOutcome {
+  NO_ANSWER
+  CALLBACK_REQUESTED
+  PAID
+  PARTIAL_PAYMENT
+  PROMISED
+  REFUSED
+  INVALID_NUMBER
+  DISPUTED
+  INFO_UPDATED
+  OTHER
+}
+
 model Application {
   id                     String             @id @default(cuid())
   firstName              String
@@ -100,6 +178,8 @@ model Application {
   product                Product            @relation(fields: [productId], references: [id])
   guarantor              Guarantor?         @relation(fields: [guarantorId], references: [id])
   paymentPlan            PaymentPlan?
+  collectionCase         CollectionCase?
+  collectionEvents       CollectionEvent[]
 
   @@index([status])
   @@index([phone])
@@ -158,6 +238,7 @@ model PaymentPlan {
 
   application          Application       @relation(fields: [applicationId], references: [id])
   installments         Installment[]
+  collectionCase       CollectionCase?
 
   @@index([status])
 }
@@ -175,7 +256,62 @@ model Installment {
   updatedAt         DateTime          @updatedAt
 
   paymentPlan       PaymentPlan       @relation(fields: [paymentPlanId], references: [id])
+  collectionEvents  CollectionEvent[]
 
   @@unique([paymentPlanId, installmentNumber])
   @@index([dueDate, status])
+}
+
+model CollectionCase {
+  id                  String                     @id @default(cuid())
+  applicationId       String                     @unique
+  paymentPlanId       String?                    @unique
+  stage               CollectionStage            @default(NONE)
+  contactStatus       ContactStatus              @default(NOT_CONTACTED)
+  nextActionDate      DateTime?
+  nextActionType      NextActionType             @default(NONE)
+  assignedTo          String?
+  lastContactedAt     DateTime?
+  lastPromiseDate     DateTime?
+  lastPromiseAmount   Int?
+  brokenPromiseCount  Int                        @default(0)
+  priority            CollectionPriority         @default(MEDIUM)
+  resolutionStatus    CollectionResolutionStatus @default(OPEN)
+  internalNote        String?
+
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  application         Application                @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  paymentPlan         PaymentPlan?               @relation(fields: [paymentPlanId], references: [id], onDelete: SetNull)
+  events              CollectionEvent[]
+
+  @@index([stage])
+  @@index([contactStatus])
+  @@index([priority])
+  @@index([nextActionDate])
+}
+
+model CollectionEvent {
+  id               String              @id @default(cuid())
+  collectionCaseId String
+  applicationId    String
+  installmentId    String?
+  eventType        CollectionEventType
+  channel          CollectionChannel?
+  outcome          CollectionOutcome?
+  note             String?
+  promisedAmount   Int?
+  promisedDate     DateTime?
+  createdBy        String?
+
+  createdAt        DateTime            @default(now())
+
+  collectionCase   CollectionCase      @relation(fields: [collectionCaseId], references: [id], onDelete: Cascade)
+  application      Application         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  installment      Installment?        @relation(fields: [installmentId], references: [id], onDelete: SetNull)
+
+  @@index([collectionCaseId, createdAt])
+  @@index([applicationId, createdAt])
+  @@index([installmentId])
 }
