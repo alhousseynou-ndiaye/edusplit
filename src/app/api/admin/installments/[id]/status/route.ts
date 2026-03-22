@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
@@ -18,6 +19,140 @@ function computePaymentPlanStatus(
   }
 
   return "ACTIVE" as const;
+}
+
+async function syncCollectionCaseForPaymentPlan(
+  tx: Prisma.TransactionClient,
+  params: {
+    applicationId: string;
+    paymentPlanId: string;
+    paymentPlanStatus: "ACTIVE" | "COMPLETED" | "LATE";
+    previousInstallmentStatus: "PENDING" | "PAID" | "LATE" | "DEFAULTED";
+    nextInstallmentStatus: "PENDING" | "PAID" | "LATE";
+  }
+) {
+  const {
+    applicationId,
+    paymentPlanId,
+    paymentPlanStatus,
+    previousInstallmentStatus,
+    nextInstallmentStatus,
+  } = params;
+
+  const existingCase = await tx.collectionCase.findUnique({
+    where: { applicationId },
+  });
+
+  // 1) Dès qu'on a du retard, on ouvre ou réactive le case de recouvrement
+  if (paymentPlanStatus === "LATE") {
+    if (!existingCase) {
+      const createdCase = await tx.collectionCase.create({
+        data: {
+          applicationId,
+          paymentPlanId,
+          stage: "SOFT_COLLECTION",
+          contactStatus: "NOT_CONTACTED",
+          nextActionDate: new Date(),
+          nextActionType: "CALL",
+          priority: "HIGH",
+          resolutionStatus: "OPEN",
+        },
+      });
+
+      await tx.collectionEvent.create({
+        data: {
+          collectionCaseId: createdCase.id,
+          applicationId,
+          eventType: "CASE_CREATED",
+          channel: "SYSTEM",
+          note: "Collection case created automatically after an installment was marked late.",
+        },
+      });
+
+      return;
+    }
+
+    const shouldReopen =
+      existingCase.stage === "NONE" || existingCase.stage === "RESOLVED";
+
+    await tx.collectionCase.update({
+      where: { id: existingCase.id },
+      data: {
+        paymentPlanId,
+        stage: shouldReopen ? "SOFT_COLLECTION" : existingCase.stage,
+        resolutionStatus:
+          existingCase.resolutionStatus === "CLOSED"
+            ? "OPEN"
+            : existingCase.resolutionStatus,
+        priority:
+          existingCase.priority === "LOW" || existingCase.priority === "MEDIUM"
+            ? "HIGH"
+            : existingCase.priority,
+        nextActionDate: existingCase.nextActionDate ?? new Date(),
+        nextActionType:
+          existingCase.nextActionType === "NONE"
+            ? "CALL"
+            : existingCase.nextActionType,
+      },
+    });
+
+    if (previousInstallmentStatus !== "LATE" && nextInstallmentStatus === "LATE") {
+      await tx.collectionEvent.create({
+        data: {
+          collectionCaseId: existingCase.id,
+          applicationId,
+          eventType: "STATUS_CHANGED",
+          channel: "SYSTEM",
+          note: "Collection case updated because an installment moved to LATE.",
+        },
+      });
+    }
+
+    return;
+  }
+
+  // 2) Si tout est régularisé / payé, on ferme le case
+  if (paymentPlanStatus === "COMPLETED" || paymentPlanStatus === "ACTIVE") {
+    if (!existingCase) {
+      return;
+    }
+
+    const shouldResolve =
+      existingCase.stage !== "RESOLVED" ||
+      existingCase.contactStatus !== "RESOLVED" ||
+      existingCase.resolutionStatus !== "CLOSED" ||
+      existingCase.nextActionType !== "NONE" ||
+      existingCase.nextActionDate !== null;
+
+    if (!shouldResolve) {
+      return;
+    }
+
+    await tx.collectionCase.update({
+      where: { id: existingCase.id },
+      data: {
+        stage: "RESOLVED",
+        contactStatus: "RESOLVED",
+        resolutionStatus: "CLOSED",
+        nextActionDate: null,
+        nextActionType: "NONE",
+        priority: "LOW",
+      },
+    });
+
+    await tx.collectionEvent.create({
+      data: {
+        collectionCaseId: existingCase.id,
+        applicationId,
+        eventType: "PAYMENT_CONFIRMED",
+        channel: "SYSTEM",
+        note:
+          paymentPlanStatus === "COMPLETED"
+            ? "Collection case resolved automatically because the payment plan is fully paid."
+            : "Collection case resolved automatically because the payment plan is no longer late.",
+      },
+    });
+  }
 }
 
 export async function PATCH(
@@ -43,7 +178,13 @@ export async function PATCH(
     const installment = await prisma.installment.findUnique({
       where: { id },
       include: {
-        paymentPlan: true,
+        paymentPlan: {
+          select: {
+            id: true,
+            applicationId: true,
+            status: true,
+          },
+        },
       },
     });
 
@@ -88,6 +229,14 @@ export async function PATCH(
         data: {
           status: paymentPlanStatus,
         },
+      });
+
+      await syncCollectionCaseForPaymentPlan(tx, {
+        applicationId: installment.paymentPlan.applicationId,
+        paymentPlanId: installment.paymentPlanId,
+        paymentPlanStatus,
+        previousInstallmentStatus: installment.status,
+        nextInstallmentStatus: nextStatus,
       });
     });
 
