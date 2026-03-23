@@ -32,7 +32,9 @@ const contactCollectionSchema = z.object({
     .optional(),
 });
 
-function getEventType(contactStatus: "CONTACT_ATTEMPTED" | "REACHED" | "NO_RESPONSE") {
+function getEventType(
+  contactStatus: "CONTACT_ATTEMPTED" | "REACHED" | "NO_RESPONSE"
+) {
   if (contactStatus === "REACHED") {
     return "CONTACT_MADE" as const;
   }
@@ -89,6 +91,20 @@ export async function POST(
       );
     }
 
+    const isResolvedCase =
+      application.collectionCase.stage === "RESOLVED" ||
+      application.collectionCase.resolutionStatus === "CLOSED";
+
+    if (isResolvedCase) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "This collection case is resolved and can no longer be updated.",
+        },
+        { status: 400 }
+      );
+    }
+
     const {
       contactStatus,
       channel,
@@ -112,9 +128,12 @@ export async function POST(
           contactStatus,
           lastContactedAt: new Date(),
           nextActionType,
-          nextActionDate: nextActionType === "NONE" ? null : normalizedNextActionDate,
+          nextActionDate:
+            nextActionType === "NONE" ? null : normalizedNextActionDate,
           priority:
-            contactStatus === "REACHED" ? "MEDIUM" : application.collectionCase!.priority,
+            contactStatus === "REACHED"
+              ? "MEDIUM"
+              : application.collectionCase!.priority,
         },
       });
 

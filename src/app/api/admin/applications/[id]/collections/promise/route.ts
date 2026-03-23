@@ -62,6 +62,20 @@ export async function POST(
       );
     }
 
+    const isResolvedCase =
+      application.collectionCase.stage === "RESOLVED" ||
+      application.collectionCase.resolutionStatus === "CLOSED";
+
+    if (isResolvedCase) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "This collection case is resolved and can no longer be updated.",
+        },
+        { status: 400 }
+      );
+    }
+
     const { promisedDate, promisedAmount, channel, note } = parsed.data;
 
     const normalizedPromisedDate = new Date(promisedDate);

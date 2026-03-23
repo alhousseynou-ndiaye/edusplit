@@ -68,6 +68,20 @@ export async function POST(
       );
     }
 
+    const isResolvedCase =
+      application.collectionCase.stage === "RESOLVED" ||
+      application.collectionCase.resolutionStatus === "CLOSED";
+
+    if (isResolvedCase) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "This collection case is resolved and can no longer be updated.",
+        },
+        { status: 400 }
+      );
+    }
+
     const { note, nextActionType, nextActionDate } = parsed.data;
 
     let normalizedNextActionDate: Date | null = null;
@@ -94,7 +108,8 @@ export async function POST(
         data: {
           internalNote: note,
           nextActionType,
-          nextActionDate: nextActionType === "NONE" ? null : normalizedNextActionDate,
+          nextActionDate:
+            nextActionType === "NONE" ? null : normalizedNextActionDate,
         },
       });
 
