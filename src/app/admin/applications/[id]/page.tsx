@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import AdminActions from "./AdminActions";
 import CreatePaymentPlan from "./CreatePaymentPlan";
 import InstallmentActions from "./InstallmentActions";
+import CollectionActions from "./CollectionActions";
 import {
   getLateCount,
   getNextDueInstallment,
@@ -666,6 +667,11 @@ export default async function AdminApplicationDetailPage({
               status={application.status}
               hasPaymentPlan={Boolean(application.paymentPlan)}
               financedAmount={application.requestedAmount}
+            />
+
+            <CollectionActions
+              applicationId={application.id}
+              hasCollectionCase={Boolean(collectionCase)}
             />
 
             <SectionCard
