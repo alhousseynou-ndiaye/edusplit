@@ -3,16 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-type CollectionActionType =
-  | "contact"
-  | "promise"
-  | "escalate"
-  | "note";
+type CollectionActionType = "contact" | "promise" | "escalate" | "note";
 
-type ContactStatus =
-  | "CONTACT_ATTEMPTED"
-  | "REACHED"
-  | "NO_RESPONSE";
+type ContactStatus = "CONTACT_ATTEMPTED" | "REACHED" | "NO_RESPONSE";
 
 type ContactChannel =
   | "PHONE"
@@ -43,12 +36,56 @@ type NextActionType =
   | "ESCALATE"
   | "NONE";
 
+type CollectionStage =
+  | "NONE"
+  | "SOFT_COLLECTION"
+  | "ESCALATED"
+  | "RESOLVED"
+  | null;
+
+type CollectionResolutionStatus =
+  | "OPEN"
+  | "MONITORING"
+  | "CURED"
+  | "CLOSED"
+  | null;
+
+function humanizeCollectionStage(stage: CollectionStage) {
+  if (!stage) return "-";
+
+  const map: Record<Exclude<CollectionStage, null>, string> = {
+    NONE: "None",
+    SOFT_COLLECTION: "Soft collection",
+    ESCALATED: "Escalated",
+    RESOLVED: "Resolved",
+  };
+
+  return map[stage];
+}
+
+function humanizeResolutionStatus(status: CollectionResolutionStatus) {
+  if (!status) return "-";
+
+  const map: Record<Exclude<CollectionResolutionStatus, null>, string> = {
+    OPEN: "Open",
+    MONITORING: "Monitoring",
+    CURED: "Cured",
+    CLOSED: "Closed",
+  };
+
+  return map[status];
+}
+
 export default function CollectionActions({
   applicationId,
   hasCollectionCase,
+  collectionStage,
+  resolutionStatus,
 }: {
   applicationId: string;
   hasCollectionCase: boolean;
+  collectionStage: CollectionStage;
+  resolutionStatus: CollectionResolutionStatus;
 }) {
   const router = useRouter();
 
@@ -81,12 +118,21 @@ export default function CollectionActions({
     useState<NextActionType>("FOLLOW_UP");
   const [noteNextActionDate, setNoteNextActionDate] = useState("");
 
+  const isResolvedCase =
+    collectionStage === "RESOLVED" || resolutionStatus === "CLOSED";
+
+  const actionsDisabled = loading !== null || !hasCollectionCase || isResolvedCase;
+
   async function handleAction(
     action: CollectionActionType,
     url: string,
     payload: Record<string, unknown>,
     successMessage: string
   ) {
+    if (actionsDisabled) {
+      return;
+    }
+
     setLoading(action);
     setError(null);
     setSuccess(null);
@@ -184,16 +230,44 @@ export default function CollectionActions({
       </p>
 
       <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
-        <span className="text-slate-500">Collection case: </span>
-        <span className="font-medium text-slate-900">
-          {hasCollectionCase ? "Available" : "Not created yet"}
-        </span>
+        <div className="flex flex-col gap-2">
+          <div>
+            <span className="text-slate-500">Collection case: </span>
+            <span className="font-medium text-slate-900">
+              {hasCollectionCase ? "Available" : "Not created yet"}
+            </span>
+          </div>
+
+          {hasCollectionCase && (
+            <>
+              <div>
+                <span className="text-slate-500">Stage: </span>
+                <span className="font-medium text-slate-900">
+                  {humanizeCollectionStage(collectionStage)}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-slate-500">Resolution status: </span>
+                <span className="font-medium text-slate-900">
+                  {humanizeResolutionStatus(resolutionStatus)}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {!hasCollectionCase && (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
           No collection case exists yet. A case is created automatically when an
           installment becomes late.
+        </div>
+      )}
+
+      {hasCollectionCase && isResolvedCase && (
+        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+          This collection case is resolved. New recovery actions are disabled.
         </div>
       )}
 
@@ -213,6 +287,7 @@ export default function CollectionActions({
         <ActionCard
           title="Mark contacted"
           description="Store a contact attempt or successful contact and plan the next follow-up."
+          disabled={actionsDisabled}
         >
           <div className="grid gap-4 md:grid-cols-2">
             <Field>
@@ -222,6 +297,7 @@ export default function CollectionActions({
                 onChange={(e) =>
                   setContactStatus(e.target.value as ContactStatus)
                 }
+                disabled={actionsDisabled}
               >
                 <option value="CONTACT_ATTEMPTED">Contact attempted</option>
                 <option value="REACHED">Reached</option>
@@ -236,6 +312,7 @@ export default function CollectionActions({
                 onChange={(e) =>
                   setContactChannel(e.target.value as ContactChannel)
                 }
+                disabled={actionsDisabled}
               >
                 <option value="PHONE">Phone</option>
                 <option value="WHATSAPP">WhatsApp</option>
@@ -252,6 +329,7 @@ export default function CollectionActions({
                 onChange={(e) =>
                   setContactOutcome(e.target.value as ContactOutcome)
                 }
+                disabled={actionsDisabled}
               >
                 <option value="CALLBACK_REQUESTED">Callback requested</option>
                 <option value="NO_ANSWER">No answer</option>
@@ -273,6 +351,7 @@ export default function CollectionActions({
                 onChange={(e) =>
                   setContactNextActionType(e.target.value as NextActionType)
                 }
+                disabled={actionsDisabled}
               >
                 <option value="CALL">Call</option>
                 <option value="WHATSAPP">WhatsApp</option>
@@ -290,6 +369,7 @@ export default function CollectionActions({
                 type="datetime-local"
                 value={contactNextActionDate}
                 onChange={(e) => setContactNextActionDate(e.target.value)}
+                disabled={actionsDisabled}
               />
             </Field>
           </div>
@@ -301,14 +381,12 @@ export default function CollectionActions({
               value={contactNote}
               onChange={(e) => setContactNote(e.target.value)}
               placeholder="Add what happened during the contact attempt..."
+              disabled={actionsDisabled}
             />
           </Field>
 
           <div className="mt-4">
-            <PrimaryButton
-              onClick={submitContact}
-              disabled={loading !== null || !hasCollectionCase}
-            >
+            <PrimaryButton onClick={submitContact} disabled={actionsDisabled}>
               {loading === "contact" ? "Saving..." : "Save contact activity"}
             </PrimaryButton>
           </div>
@@ -317,6 +395,7 @@ export default function CollectionActions({
         <ActionCard
           title="Promise to pay"
           description="Record a promised payment date and amount for follow-up."
+          disabled={actionsDisabled}
         >
           <div className="grid gap-4 md:grid-cols-2">
             <Field>
@@ -325,6 +404,7 @@ export default function CollectionActions({
                 type="datetime-local"
                 value={promiseDate}
                 onChange={(e) => setPromiseDate(e.target.value)}
+                disabled={actionsDisabled}
               />
             </Field>
 
@@ -336,6 +416,7 @@ export default function CollectionActions({
                 value={promiseAmount}
                 onChange={(e) => setPromiseAmount(e.target.value)}
                 placeholder="50000"
+                disabled={actionsDisabled}
               />
             </Field>
 
@@ -346,6 +427,7 @@ export default function CollectionActions({
                 onChange={(e) =>
                   setPromiseChannel(e.target.value as ContactChannel)
                 }
+                disabled={actionsDisabled}
               >
                 <option value="PHONE">Phone</option>
                 <option value="WHATSAPP">WhatsApp</option>
@@ -363,14 +445,12 @@ export default function CollectionActions({
               value={promiseNote}
               onChange={(e) => setPromiseNote(e.target.value)}
               placeholder="Add details about the commitment made by the applicant..."
+              disabled={actionsDisabled}
             />
           </Field>
 
           <div className="mt-4">
-            <PrimaryButton
-              onClick={submitPromise}
-              disabled={loading !== null || !hasCollectionCase}
-            >
+            <PrimaryButton onClick={submitPromise} disabled={actionsDisabled}>
               {loading === "promise" ? "Saving..." : "Save promise to pay"}
             </PrimaryButton>
           </div>
@@ -379,6 +459,7 @@ export default function CollectionActions({
         <ActionCard
           title="Escalate"
           description="Escalate the case when soft collection is no longer sufficient."
+          disabled={actionsDisabled}
         >
           <div className="grid gap-4 md:grid-cols-2">
             <Field>
@@ -387,6 +468,7 @@ export default function CollectionActions({
                 type="datetime-local"
                 value={escalationNextActionDate}
                 onChange={(e) => setEscalationNextActionDate(e.target.value)}
+                disabled={actionsDisabled}
               />
             </Field>
           </div>
@@ -398,6 +480,7 @@ export default function CollectionActions({
               value={escalationNote}
               onChange={(e) => setEscalationNote(e.target.value)}
               placeholder="Explain why the case is being escalated..."
+              disabled={actionsDisabled}
             />
           </Field>
 
@@ -405,7 +488,7 @@ export default function CollectionActions({
             <button
               type="button"
               onClick={submitEscalation}
-              disabled={loading !== null || !hasCollectionCase}
+              disabled={actionsDisabled}
               className="rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-60"
             >
               {loading === "escalate" ? "Saving..." : "Escalate case"}
@@ -416,6 +499,7 @@ export default function CollectionActions({
         <ActionCard
           title="Add note / schedule follow-up"
           description="Keep a clean audit trail and update the next operational step."
+          disabled={actionsDisabled}
         >
           <div className="grid gap-4 md:grid-cols-2">
             <Field>
@@ -425,6 +509,7 @@ export default function CollectionActions({
                 onChange={(e) =>
                   setNoteNextActionType(e.target.value as NextActionType)
                 }
+                disabled={actionsDisabled}
               >
                 <option value="CALL">Call</option>
                 <option value="WHATSAPP">WhatsApp</option>
@@ -442,6 +527,7 @@ export default function CollectionActions({
                 type="datetime-local"
                 value={noteNextActionDate}
                 onChange={(e) => setNoteNextActionDate(e.target.value)}
+                disabled={actionsDisabled}
               />
             </Field>
           </div>
@@ -453,14 +539,12 @@ export default function CollectionActions({
               value={generalNote}
               onChange={(e) => setGeneralNote(e.target.value)}
               placeholder="Add an internal recovery note..."
+              disabled={actionsDisabled}
             />
           </Field>
 
           <div className="mt-4">
-            <PrimaryButton
-              onClick={submitNote}
-              disabled={loading !== null || !hasCollectionCase}
-            >
+            <PrimaryButton onClick={submitNote} disabled={actionsDisabled}>
               {loading === "note" ? "Saving..." : "Save note"}
             </PrimaryButton>
           </div>
@@ -474,13 +558,19 @@ function ActionCard({
   title,
   description,
   children,
+  disabled = false,
 }: {
   title: string;
   description: string;
   children: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+    <div
+      className={`rounded-2xl border border-slate-200 bg-slate-50 p-5 ${
+        disabled ? "opacity-70" : ""
+      }`}
+    >
       <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
       <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
       <div className="mt-4">{children}</div>
@@ -513,7 +603,7 @@ function Input({
   return (
     <input
       {...props}
-      className={`w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-900 focus:ring-4 focus:ring-slate-100 ${className}`}
+      className={`w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-900 focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 ${className}`}
     />
   );
 }
@@ -526,7 +616,7 @@ function Select({
   return (
     <select
       {...props}
-      className={`w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-100 ${className}`}
+      className={`w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 ${className}`}
     >
       {children}
     </select>
@@ -540,7 +630,7 @@ function Textarea({
   return (
     <textarea
       {...props}
-      className={`w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-900 focus:ring-4 focus:ring-slate-100 ${className}`}
+      className={`w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-900 focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 ${className}`}
     />
   );
 }

@@ -672,6 +672,8 @@ export default async function AdminApplicationDetailPage({
             <CollectionActions
               applicationId={application.id}
               hasCollectionCase={Boolean(collectionCase)}
+              collectionStage={collectionCase?.stage ?? null}
+              resolutionStatus={collectionCase?.resolutionStatus ?? null}
             />
 
             <SectionCard
