@@ -26,6 +26,13 @@ async function syncCollectionCaseForPaymentPlan(
   params: {
     applicationId: string;
     paymentPlanId: string;
+    previousPaymentPlanStatus:
+      | "PENDING"
+      | "ACTIVE"
+      | "COMPLETED"
+      | "LATE"
+      | "DEFAULTED"
+      | "CANCELED";
     paymentPlanStatus: "ACTIVE" | "COMPLETED" | "LATE";
     previousInstallmentStatus: "PENDING" | "PAID" | "LATE" | "DEFAULTED";
     nextInstallmentStatus: "PENDING" | "PAID" | "LATE";
@@ -34,6 +41,7 @@ async function syncCollectionCaseForPaymentPlan(
   const {
     applicationId,
     paymentPlanId,
+    previousPaymentPlanStatus,
     paymentPlanStatus,
     previousInstallmentStatus,
     nextInstallmentStatus,
@@ -96,7 +104,10 @@ async function syncCollectionCaseForPaymentPlan(
       },
     });
 
-    if (previousInstallmentStatus !== "LATE" && nextInstallmentStatus === "LATE") {
+    if (
+      previousInstallmentStatus !== "LATE" &&
+      nextInstallmentStatus === "LATE"
+    ) {
       await tx.collectionEvent.create({
         data: {
           collectionCaseId: existingCase.id,
@@ -111,20 +122,34 @@ async function syncCollectionCaseForPaymentPlan(
     return;
   }
 
-  // 2) Si tout est régularisé / payé, on ferme le case
+  // 2) Si tout est régularisé / payé, on ferme le case uniquement sur une vraie transition
   if (paymentPlanStatus === "COMPLETED" || paymentPlanStatus === "ACTIVE") {
     if (!existingCase) {
       return;
     }
 
-    const shouldResolve =
-      existingCase.stage !== "RESOLVED" ||
-      existingCase.contactStatus !== "RESOLVED" ||
-      existingCase.resolutionStatus !== "CLOSED" ||
-      existingCase.nextActionType !== "NONE" ||
-      existingCase.nextActionDate !== null;
+    const isAlreadyResolved =
+      existingCase.stage === "RESOLVED" &&
+      existingCase.contactStatus === "RESOLVED" &&
+      existingCase.resolutionStatus === "CLOSED" &&
+      existingCase.nextActionType === "NONE" &&
+      existingCase.nextActionDate === null;
 
-    if (!shouldResolve) {
+    if (isAlreadyResolved) {
+      return;
+    }
+
+    const movedOutOfLate =
+      previousPaymentPlanStatus === "LATE" &&
+      (paymentPlanStatus === "ACTIVE" || paymentPlanStatus === "COMPLETED");
+
+    const newlyCompleted =
+      previousPaymentPlanStatus !== "COMPLETED" &&
+      paymentPlanStatus === "COMPLETED";
+
+    const shouldAutoResolve = movedOutOfLate || newlyCompleted;
+
+    if (!shouldAutoResolve) {
       return;
     }
 
@@ -234,6 +259,7 @@ export async function PATCH(
       await syncCollectionCaseForPaymentPlan(tx, {
         applicationId: installment.paymentPlan.applicationId,
         paymentPlanId: installment.paymentPlanId,
+        previousPaymentPlanStatus: installment.paymentPlan.status,
         paymentPlanStatus,
         previousInstallmentStatus: installment.status,
         nextInstallmentStatus: nextStatus,
